@@ -1,13 +1,13 @@
 #include "duckdb/storage/table/persistent_segment.hpp"
+
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/types/null_value.hpp"
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
-#include "duckdb/common/types/null_value.hpp"
 #include "duckdb/storage/checkpoint/table_data_writer.hpp"
 #include "duckdb/storage/meta_block_reader.hpp"
-
-#include "duckdb/storage/numeric_segment.hpp"
-#include "duckdb/storage/string_segment.hpp"
+#include "duckdb/storage/segment/numeric_segment.hpp"
+#include "duckdb/storage/segment/string_segment.hpp"
 
 using namespace duckdb;
 using namespace std;

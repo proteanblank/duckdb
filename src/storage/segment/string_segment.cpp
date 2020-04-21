@@ -1,10 +1,11 @@
-#include "duckdb/storage/string_segment.hpp"
-#include "duckdb/storage/buffer_manager.hpp"
-#include "duckdb/storage/numeric_segment.hpp"
-#include "duckdb/transaction/update_info.hpp"
-#include "duckdb/common/vector_operations/vector_operations.hpp"
-#include "duckdb/storage/data_table.hpp"
+#include "duckdb/storage/segment/string_segment.hpp"
+
 #include "duckdb/common/operator/comparison_operators.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
+#include "duckdb/storage/buffer_manager.hpp"
+#include "duckdb/storage/data_table.hpp"
+#include "duckdb/storage/segment/numeric_segment.hpp"
+#include "duckdb/transaction/update_info.hpp"
 
 using namespace duckdb;
 using namespace std;

@@ -1,9 +1,11 @@
 #include "duckdb/storage/table/transient_segment.hpp"
+
 #include "duckdb/common/types/null_value.hpp"
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
-#include "duckdb/storage/numeric_segment.hpp"
-#include "duckdb/storage/string_segment.hpp"
+#include "duckdb/storage/segment/numeric_segment.hpp"
+#include "duckdb/storage/segment/rle_segment.hpp"
+#include "duckdb/storage/segment/string_segment.hpp"
 #include "duckdb/storage/table/append_state.hpp"
 
 using namespace duckdb;
@@ -11,10 +13,14 @@ using namespace std;
 
 TransientSegment::TransientSegment(BufferManager &manager, TypeId type, idx_t start)
     : ColumnSegment(type, ColumnSegmentType::TRANSIENT, start), manager(manager) {
-	if (type == TypeId::VARCHAR) {
-		data = make_unique<StringSegment>(manager, start);
+	if (useLRESegment) {
+		data = make_unique<RLESegment>(manager, type, start);
 	} else {
-		data = make_unique<NumericSegment>(manager, type, start);
+		if (type == TypeId::VARCHAR) {
+			data = make_unique<StringSegment>(manager, start);
+		} else {
+			data = make_unique<NumericSegment>(manager, type, start);
+		}
 	}
 }
 

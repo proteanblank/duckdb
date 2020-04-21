@@ -1,12 +1,12 @@
 #include "duckdb/transaction/commit_state.hpp"
-#include "duckdb/transaction/delete_info.hpp"
-#include "duckdb/transaction/update_info.hpp"
 
-#include "duckdb/storage/data_table.hpp"
-#include "duckdb/storage/write_ahead_log.hpp"
-#include "duckdb/storage/uncompressed_segment.hpp"
 #include "duckdb/common/serializer/buffered_deserializer.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
+#include "duckdb/storage/data_table.hpp"
+#include "duckdb/storage/segment/uncompressed_segment.hpp"
+#include "duckdb/storage/write_ahead_log.hpp"
+#include "duckdb/transaction/delete_info.hpp"
+#include "duckdb/transaction/update_info.hpp"
 
 using namespace duckdb;
 using namespace std;

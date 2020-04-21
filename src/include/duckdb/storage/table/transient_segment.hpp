@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include "duckdb/storage/table/column_segment.hpp"
 #include "duckdb/storage/block.hpp"
 #include "duckdb/storage/buffer_manager.hpp"
-#include "duckdb/storage/uncompressed_segment.hpp"
+#include "duckdb/storage/segment/uncompressed_segment.hpp"
+#include "duckdb/storage/table/column_segment.hpp"
 
 namespace duckdb {
 struct ColumnAppendState;

@@ -38,7 +38,8 @@ using std::vector;
 #if ((STANDARD_VECTOR_SIZE & (STANDARD_VECTOR_SIZE - 1)) != 0)
 #error Vector size should be a power of two
 #endif
-
+//!
+extern bool useLRESegment;
 //! a saner size_t for loop indices etc
 typedef uint64_t idx_t;
 

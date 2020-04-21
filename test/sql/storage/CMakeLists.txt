@@ -2,6 +2,7 @@ if(NOT WIN32 AND NOT SUN)
   add_library_unity(test_sql_storage
                     OBJECT
                     test_buffer_manager.cpp
+          test_rle_segment.cpp
                     test_constraints.cpp
                     test_checksum.cpp
                     test_commit_abort.cpp
@@ -22,6 +23,7 @@ else()
   add_library_unity(test_sql_storage
                     OBJECT
                     test_buffer_manager.cpp
+          test_rle_segment.cpp
                     test_constraints.cpp
                     test_checksum.cpp
                     test_droptable.cpp
