@@ -36,6 +36,8 @@ excluded_compilation_files = excluded_files + ['gram.hpp', 'kwlist.hpp', "duckdb
 
 
 linenumbers = False
+third_party_source_file = None
+temp_third_party_source_file = "duckdb_third_party.cpp.tmp"
 
 def get_includes(fpath, text):
     # find all the includes referred to in the directory
@@ -135,17 +137,36 @@ def generate_amalgamation(source_file, header_file):
         for fpath in main_header_files:
             hfile.write(write_file(fpath))
 
+    header_file_name = header_file.split(os.sep)[-1]
+
+    compile_dirs = compile_directories
+
+    if not third_party_source_file is None:
+        print("------------------------")
+        print("-- Writing " + third_party_source_file + " --")
+        print("------------------------")
+
+        third_party_directories = [d for d in compile_dirs if d.startswith('third_party')]
+        compile_dirs = ['src']
+
+        with open(temp_third_party_source_file, 'w+') as tpfile:
+            tpfile.write('#include "' + header_file_name + '"\n\n')
+            for compile_dir in third_party_directories:
+                write_dir(compile_dir, tpfile)
+        copy_if_different(temp_third_party_source_file, third_party_source_file)
+        os.remove(temp_third_party_source_file)
+
 
     # now construct duckdb.cpp
     print("------------------------")
     print("-- Writing " + source_file + " --")
     print("------------------------")
 
+
     # scan all the .cpp files
     with open(temp_source, 'w+') as sfile:
-        header_file_name = header_file.split(os.sep)[-1]
         sfile.write('#include "' + header_file_name + '"\n\n')
-        for compile_dir in compile_directories:
+        for compile_dir in compile_dirs:
             write_dir(compile_dir, sfile)
         # for windows we write file_system.cpp last
         # this is because it includes windows.h which contains a lot of #define statements that mess up the other code
@@ -164,6 +185,8 @@ if __name__ == "__main__":
             linenumbers = True
         elif arg == '--no-linenumbers':
             linenumbers = False
+        elif arg.startswith('--split-third-party='):
+            third_party_source_file = os.path.join(*arg.split('=', 1)[1].split('/'))
         elif arg.startswith('--header='):
             header_file = os.path.join(*arg.split('=', 1)[1].split('/'))
         elif arg.startswith('--source='):
