@@ -328,8 +328,13 @@ public:
 	}
 
 private:
-	static unique_ptr<FunctionData> parquet_scan_bind(ClientContext &context, vector<Value> &inputs, unordered_map<string, Value> &named_parameters,
+	static unique_ptr<FunctionData> parquet_scan_bind(ClientContext &context, vector<Value> &inputs,
+	                                                  unordered_map<string, Value> &named_parameters,
 	                                                  vector<SQLType> &return_types, vector<string> &names) {
+
+		if (!context.db.config.enable_copy) {
+			throw Exception("parquet_scan is disabled by configuration");
+		}
 
 		auto file_name = inputs[0].GetValue<string>();
 		auto res = make_unique<ParquetScanFunctionData>();
@@ -1253,8 +1258,9 @@ unique_ptr<GlobalFunctionData> parquet_write_initialize_global(ClientContext &co
 	auto &parquet_bind = (ParquetWriteBindData &)bind_data;
 
 	// initialize the file writer
-	global_state->writer = make_unique<BufferedFileWriter>(context.db.GetFileSystem(), parquet_bind.file_name.c_str(),
-	                                                       FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE_NEW);
+	global_state->writer =
+	    make_unique<BufferedFileWriter>(context.db.GetFileSystem(), parquet_bind.file_name.c_str(),
+	                                    FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE_NEW);
 	// parquet files start with the string "PAR1"
 	global_state->writer->WriteData((const_data_ptr_t) "PAR1", 4);
 	TCompactProtocolFactoryT<MyTransport> tproto_factory;
