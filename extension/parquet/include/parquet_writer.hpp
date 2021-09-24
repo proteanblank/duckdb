@@ -22,11 +22,12 @@
 
 namespace duckdb {
 class FileSystem;
+class FileOpener;
 
 class ParquetWriter {
 public:
-	ParquetWriter(FileSystem &fs, string file_name, vector<LogicalType> types, vector<string> names,
-	              parquet::format::CompressionCodec::type codec);
+	ParquetWriter(FileSystem &fs, string file_name, FileOpener *file_opener, vector<LogicalType> types,
+	              vector<string> names, duckdb_parquet::format::CompressionCodec::type codec);
 
 public:
 	void Flush(ChunkCollection &buffer);
@@ -36,11 +37,11 @@ private:
 	string file_name;
 	vector<LogicalType> sql_types;
 	vector<string> column_names;
-	parquet::format::CompressionCodec::type codec;
+	duckdb_parquet::format::CompressionCodec::type codec;
 
 	unique_ptr<BufferedFileWriter> writer;
-	shared_ptr<apache::thrift::protocol::TProtocol> protocol;
-	parquet::format::FileMetaData file_meta_data;
+	shared_ptr<duckdb_apache::thrift::protocol::TProtocol> protocol;
+	duckdb_parquet::format::FileMetaData file_meta_data;
 	std::mutex lock;
 };
 

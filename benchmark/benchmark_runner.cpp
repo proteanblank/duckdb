@@ -79,8 +79,8 @@ bool BenchmarkRunner::TryLoadDatabase(DuckDB &db, string name) {
 	return true;
 }
 
-volatile bool is_active = false;
-volatile bool timeout = false;
+atomic<bool> is_active;
+atomic<bool> timeout;
 
 void sleep_thread(Benchmark *benchmark, BenchmarkState *state, int timeout_duration) {
 	// timeout is given in seconds
@@ -124,17 +124,15 @@ void BenchmarkRunner::LogOutput(string message) {
 void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 	Profiler<system_clock> profiler;
 	auto display_name = benchmark->DisplayName();
-	LogLine(string(display_name.size() + 6, '-'));
-	LogLine("|| " + display_name + " ||");
-	LogLine(string(display_name.size() + 6, '-'));
+	// LogLine(string(display_name.size() + 6, '-'));
+	// LogLine("|| " + display_name + " ||");
+	// LogLine(string(display_name.size() + 6, '-'));
 	auto state = benchmark->Initialize(configuration);
 	auto nruns = benchmark->NRuns();
 	for (size_t i = 0; i < nruns + 1; i++) {
 		bool hotrun = i > 0;
 		if (hotrun) {
-			Log(StringUtil::Format("%d/%d...", i, nruns));
-		} else {
-			Log("Cold run...");
+			Log(StringUtil::Format("%s\t%d\t", benchmark->name, i));
 		}
 		if (hotrun && benchmark->RequireReinit()) {
 			state = benchmark->Initialize(configuration);
@@ -169,8 +167,6 @@ void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 					LogResult(std::to_string(profiler.Elapsed()));
 				}
 			}
-		} else {
-			LogLine("DONE");
 		}
 	}
 	benchmark->Finalize();
@@ -178,6 +174,7 @@ void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 
 void BenchmarkRunner::RunBenchmarks() {
 	LogLine("Starting benchmark run.");
+	LogLine("name\trun\tnruns\ttiming");
 	for (auto &benchmark : benchmarks) {
 		RunBenchmark(benchmark);
 	}
@@ -187,6 +184,8 @@ void print_help() {
 	fprintf(stderr, "Usage: benchmark_runner\n");
 	fprintf(stderr, "              --list         Show a list of all benchmarks\n");
 	fprintf(stderr, "              --profile      Prints the query profile information\n");
+	fprintf(stderr, "              --threads=n    Sets the amount of threads to use during execution (default: "
+	                "hardware concurrency)\n");
 	fprintf(stderr, "              --out=[file]   Move benchmark output to file\n");
 	fprintf(stderr, "              --log=[file]   Move log output to file\n");
 	fprintf(stderr, "              --info         Prints info about the benchmark\n");
@@ -199,8 +198,8 @@ enum ConfigurationError { None, BenchmarkNotFound, InfoWithoutBenchmarkName };
 
 void LoadInterpretedBenchmarks() {
 	// load interpreted benchmarks
-	FileSystem fs;
-	listFiles(fs, "benchmark", [](string path) {
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	listFiles(*fs, "benchmark", [](string path) {
 		if (endsWith(path, ".benchmark")) {
 			new InterpretedBenchmark(path);
 		}
@@ -227,6 +226,10 @@ void parse_arguments(const int arg_counter, char const *const *arg_values) {
 		} else if (arg == "--profile") {
 			// write info of benchmark
 			instance.configuration.print_profile_info = true;
+		} else if (StringUtil::StartsWith(arg, "--threads=")) {
+			// write info of benchmark
+			auto splits = StringUtil::Split(arg, '=');
+			instance.threads = Value(splits[1]).CastAs(LogicalType::UINTEGER).GetValue<uint32_t>();
 		} else if (arg == "--query") {
 			// write group of benchmark
 			instance.configuration.meta = BenchmarkMetaType::QUERY;
@@ -296,6 +299,7 @@ ConfigurationError run_benchmarks() {
 				fprintf(stdout, "%s\n", query.c_str());
 			}
 		} else {
+			instance.LogLine("name\trun\ttiming");
 			for (const auto &benchmark_index : benchmark_indices) {
 				instance.RunBenchmark(benchmarks[benchmark_index]);
 			}
@@ -325,8 +329,7 @@ void print_error_message(const ConfigurationError &error) {
 }
 
 int main(int argc, char **argv) {
-	FileSystem fs;
-	fs.SetWorkingDirectory(DUCKDB_ROOT_DIRECTORY);
+	FileSystem::SetWorkingDirectory(DUCKDB_ROOT_DIRECTORY);
 	// load interpreted benchmarks before doing anything else
 	LoadInterpretedBenchmarks();
 	parse_arguments(argc, argv);

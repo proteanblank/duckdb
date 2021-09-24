@@ -29,6 +29,11 @@ class SimpleFunction;
 
 struct MacroBinding;
 
+struct BoundColumnReferenceInfo {
+	string name;
+	idx_t query_location;
+};
+
 struct BindResult {
 	explicit BindResult(string error) : error(error) {
 	}
@@ -48,11 +53,19 @@ public:
 	ExpressionBinder(Binder &binder, ClientContext &context, bool replace_binder = false);
 	virtual ~ExpressionBinder();
 
+	//! The target type that should result from the binder. If the result is not of this type, a cast to this type will
+	//! be added. Defaults to INVALID.
+	LogicalType target_type;
+
+public:
 	unique_ptr<Expression> Bind(unique_ptr<ParsedExpression> &expr, LogicalType *result_type = nullptr,
 	                            bool root_expression = true);
 
 	//! Returns whether or not any columns have been bound by the expression binder
-	bool BoundColumns() {
+	bool HasBoundColumns() {
+		return !bound_columns.empty();
+	}
+	const vector<BoundColumnReferenceInfo> &GetBoundColumns() {
 		return bound_columns;
 	}
 
@@ -67,17 +80,22 @@ public:
 
 	bool BindCorrelatedColumns(unique_ptr<ParsedExpression> &expr);
 
-	//! The target type that should result from the binder. If the result is not of this type, a cast to this type will
-	//! be added. Defaults to INVALID.
-	LogicalType target_type;
-
 	void BindChild(unique_ptr<ParsedExpression> &expr, idx_t depth, string &error);
 	static void ExtractCorrelatedExpressions(Binder &binder, Expression &expr);
+
+	static bool ContainsNullType(const LogicalType &type);
+	static LogicalType ExchangeNullType(const LogicalType &type);
+	static bool ContainsType(const LogicalType &type, LogicalTypeId target);
+	static LogicalType ExchangeType(const LogicalType &type, LogicalTypeId target, LogicalType new_type);
+
+	static void ResolveParameterType(LogicalType &type);
+	static void ResolveParameterType(unique_ptr<Expression> &expr);
 
 protected:
 	virtual BindResult BindExpression(unique_ptr<ParsedExpression> *expr_ptr, idx_t depth,
 	                                  bool root_expression = false);
 
+	BindResult BindExpression(BetweenExpression &expr, idx_t depth);
 	BindResult BindExpression(CaseExpression &expr, idx_t depth);
 	BindResult BindExpression(CollateExpression &expr, idx_t depth);
 	BindResult BindExpression(CastExpression &expr, idx_t depth);
@@ -103,7 +121,6 @@ protected:
 	virtual void ReplaceMacroParametersRecursive(unique_ptr<ParsedExpression> &expr);
 	virtual void ReplaceMacroParametersRecursive(ParsedExpression &expr, QueryNode &node);
 	virtual void ReplaceMacroParametersRecursive(ParsedExpression &expr, TableRef &ref);
-	virtual void CheckForSideEffects(FunctionExpression &function, idx_t depth, string &error);
 
 	virtual string UnsupportedAggregateMessage();
 	virtual string UnsupportedUnnestMessage();
@@ -112,7 +129,7 @@ protected:
 	ClientContext &context;
 	ExpressionBinder *stored_binder;
 	MacroBinding *macro_binding;
-	bool bound_columns = false;
+	vector<BoundColumnReferenceInfo> bound_columns;
 };
 
 } // namespace duckdb

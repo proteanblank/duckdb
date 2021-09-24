@@ -1,8 +1,8 @@
 #include "duckdb_python/pybind_wrapper.hpp"
 
-#include <unordered_map>
-#include <vector>
-#include <atomic>
+#include "duckdb/common/atomic.hpp"
+#include "duckdb/common/unordered_map.hpp"
+#include "duckdb/common/vector.hpp"
 
 #include "duckdb_python/array_wrapper.hpp"
 #include "duckdb_python/pandas_scan.hpp"
@@ -16,6 +16,10 @@
 #include "duckdb.hpp"
 #include <random>
 #include <stdlib.h>
+
+#ifndef DUCKDB_PYTHON_LIB_NAME
+#define DUCKDB_PYTHON_LIB_NAME duckdb
+#endif
 
 namespace py = pybind11;
 
@@ -61,7 +65,7 @@ static py::object PyTokenize(const string &query) {
 	return move(result);
 }
 
-PYBIND11_MODULE(duckdb, m) {
+PYBIND11_MODULE(DUCKDB_PYTHON_LIB_NAME, m) {
 	DuckDBPyRelation::Initialize(m);
 	DuckDBPyResult::Initialize(m);
 	DuckDBPyConnection::Initialize(m);
@@ -74,12 +78,12 @@ PYBIND11_MODULE(duckdb, m) {
 	m.def("connect", &DuckDBPyConnection::Connect,
 	      "Create a DuckDB database instance. Can take a database file name to read/write persistent data and a "
 	      "read_only flag if no changes are desired",
-	      py::arg("database") = ":memory:", py::arg("read_only") = false);
+	      py::arg("database") = ":memory:", py::arg("read_only") = false, py::arg("config") = py::dict());
 	m.def("tokenize", PyTokenize,
 	      "Tokenizes a SQL string, returning a list of (position, type) tuples that can be "
 	      "used for e.g. syntax highlighting",
 	      py::arg("query"));
-	py::enum_<PySQLTokenType>(m, "token_type")
+	py::enum_<PySQLTokenType>(m, "token_type", py::module_local())
 	    .value("identifier", PySQLTokenType::PY_SQL_TOKEN_IDENTIFIER)
 	    .value("numeric_const", PySQLTokenType::PY_SQL_TOKEN_NUMERIC_CONSTANT)
 	    .value("string_const", PySQLTokenType::PY_SQL_TOKEN_STRING_CONSTANT)
@@ -89,6 +93,10 @@ PYBIND11_MODULE(duckdb, m) {
 	    .export_values();
 
 	m.def("values", &DuckDBPyRelation::Values, "Create a relation object from the passed values", py::arg("values"));
+	m.def("from_query", &DuckDBPyRelation::FromQuery, "Create a relation object from the given SQL query",
+	      py::arg("query"), py::arg("alias") = "query_relation");
+	m.def("query", &DuckDBPyRelation::FromQuery, "Create a relation object from the given SQL query", py::arg("query"),
+	      py::arg("alias") = "query_relation");
 	m.def("from_csv_auto", &DuckDBPyRelation::FromCsvAuto, "Creates a relation object from the CSV file in file_name",
 	      py::arg("file_name"));
 	m.def("from_parquet", &DuckDBPyRelation::FromParquet,
@@ -112,7 +120,7 @@ PYBIND11_MODULE(duckdb, m) {
 	m.def("distinct", &DuckDBPyRelation::DistinctDF, "Compute the distinct rows from Data.Frame df ", py::arg("df"));
 	m.def("limit", &DuckDBPyRelation::LimitDF, "Retrieve the first n rows from the Data.Frame df", py::arg("df"),
 	      py::arg("n"));
-	m.def("query", &DuckDBPyRelation::QueryDF,
+	m.def("query_df", &DuckDBPyRelation::QueryDF,
 	      "Run the given SQL query in sql_query on the view named virtual_table_name that contains the content of "
 	      "Data.Frame df",
 	      py::arg("df"), py::arg("virtual_table_name"), py::arg("sql_query"));

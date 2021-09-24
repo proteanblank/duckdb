@@ -1,11 +1,11 @@
 #include "duckdb_python/pyrelation.hpp"
 #include "duckdb_python/pyconnection.hpp"
 #include "duckdb_python/pyresult.hpp"
-
+#include "duckdb/parser/qualified_name.hpp"
 namespace duckdb {
 
 void DuckDBPyRelation::Initialize(py::handle &m) {
-	py::class_<DuckDBPyRelation>(m, "DuckDBPyRelation")
+	py::class_<DuckDBPyRelation>(m, "DuckDBPyRelation", py::module_local())
 	    .def("filter", &DuckDBPyRelation::Filter, "Filter the relation object by the filter in filter_expr",
 	         py::arg("filter_expr"))
 	    .def("project", &DuckDBPyRelation::Project, "Project the relation object by the projection in project_expr",
@@ -49,6 +49,8 @@ void DuckDBPyRelation::Initialize(py::handle &m) {
 	    .def("arrow", &DuckDBPyRelation::ToArrowTable, "Transforms the relation object into a Arrow table")
 	    .def("to_df", &DuckDBPyRelation::ToDF, "Transforms the relation object into a Data.Frame")
 	    .def("df", &DuckDBPyRelation::ToDF, "Transforms the relation object into a Data.Frame")
+	    .def("fetchone", &DuckDBPyRelation::Fetchone, "Execute and fetch a single row")
+	    .def("fetchall", &DuckDBPyRelation::Fetchall, "Execute and fetch all rows")
 	    .def("map", &DuckDBPyRelation::Map, py::arg("map_function"), "Calls the passed function on the relation")
 	    .def("__str__", &DuckDBPyRelation::Print)
 	    .def("__repr__", &DuckDBPyRelation::Print)
@@ -66,6 +68,10 @@ unique_ptr<DuckDBPyRelation> DuckDBPyRelation::Values(py::object values) {
 	return DuckDBPyConnection::DefaultConnection()->Values(std::move(values));
 }
 
+unique_ptr<DuckDBPyRelation> DuckDBPyRelation::FromQuery(const string &query, const string &alias) {
+	return DuckDBPyConnection::DefaultConnection()->FromQuery(query, alias);
+}
+
 unique_ptr<DuckDBPyRelation> DuckDBPyRelation::FromCsvAuto(const string &filename) {
 	return DuckDBPyConnection::DefaultConnection()->FromCsvAuto(filename);
 }
@@ -74,7 +80,7 @@ unique_ptr<DuckDBPyRelation> DuckDBPyRelation::FromParquet(const string &filenam
 	return DuckDBPyConnection::DefaultConnection()->FromParquet(filename);
 }
 
-unique_ptr<DuckDBPyRelation> DuckDBPyRelation::FromArrowTable(const py::object &table) {
+unique_ptr<DuckDBPyRelation> DuckDBPyRelation::FromArrowTable(py::object &table) {
 	return DuckDBPyConnection::DefaultConnection()->FromArrowTable(table);
 }
 
@@ -149,6 +155,30 @@ py::object DuckDBPyRelation::ToDF() {
 	return res->FetchDF();
 }
 
+py::object DuckDBPyRelation::Fetchone() {
+	auto res = make_unique<DuckDBPyResult>();
+	{
+		py::gil_scoped_release release;
+		res->result = rel->Execute();
+	}
+	if (!res->result->success) {
+		throw std::runtime_error(res->result->error);
+	}
+	return res->Fetchone();
+}
+
+py::object DuckDBPyRelation::Fetchall() {
+	auto res = make_unique<DuckDBPyResult>();
+	{
+		py::gil_scoped_release release;
+		res->result = rel->Execute();
+	}
+	if (!res->result->success) {
+		throw std::runtime_error(res->result->error);
+	}
+	return res->Fetchall();
+}
+
 py::object DuckDBPyRelation::ToArrowTable() {
 	auto res = make_unique<DuckDBPyResult>();
 	{
@@ -191,10 +221,6 @@ unique_ptr<DuckDBPyRelation> DuckDBPyRelation::CreateView(const string &view_nam
 	return make_unique<DuckDBPyRelation>(rel);
 }
 
-unique_ptr<DuckDBPyRelation> DuckDBPyRelation::CreateViewDf(py::object df, const string &view_name, bool replace) {
-	return DuckDBPyConnection::DefaultConnection()->FromDF(std::move(df))->CreateView(view_name, replace);
-}
-
 unique_ptr<DuckDBPyResult> DuckDBPyRelation::Query(const string &view_name, const string &sql_query) {
 	auto res = make_unique<DuckDBPyResult>();
 	res->result = rel->Query(view_name, sql_query);
@@ -221,7 +247,14 @@ unique_ptr<DuckDBPyResult> DuckDBPyRelation::QueryDF(py::object df, const string
 }
 
 void DuckDBPyRelation::InsertInto(const string &table) {
-	rel->Insert(table);
+	auto parsed_info = QualifiedName::Parse(table);
+	if (parsed_info.schema.empty()) {
+		//! No Schema Defined, we use default schema.
+		rel->Insert(table);
+	} else {
+		//! Schema defined, we try to insert into it.
+		rel->Insert(parsed_info.schema, parsed_info.name);
+	};
 }
 
 void DuckDBPyRelation::Insert(py::object params) {

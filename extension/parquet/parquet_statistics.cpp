@@ -1,21 +1,21 @@
 #include "parquet_statistics.hpp"
-#include "parquet_timestamp.hpp"
 
 #include "duckdb.hpp"
+#include "parquet_timestamp.hpp"
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/common/types/value.hpp"
-#include "duckdb/storage/statistics/string_statistics.hpp"
 #include "duckdb/storage/statistics/numeric_statistics.hpp"
+#include "duckdb/storage/statistics/string_statistics.hpp"
 #endif
 
 namespace duckdb {
 
-using parquet::format::ConvertedType;
-using parquet::format::Type;
+using duckdb_parquet::format::ConvertedType;
+using duckdb_parquet::format::Type;
 
 template <Value (*FUNC)(const_data_ptr_t input)>
 static unique_ptr<BaseStatistics> TemplatedGetNumericStats(const LogicalType &type,
-                                                           const parquet::format::Statistics &parquet_stats) {
+                                                           const duckdb_parquet::format::Statistics &parquet_stats) {
 	auto stats = make_unique<NumericStatistics>(type);
 
 	// for reasons unknown to science, Parquet defines *both* `min` and `min_value` as well as `max` and
@@ -57,6 +57,10 @@ static Value TransformStatisticsDouble(const_data_ptr_t input) {
 		return Value(LogicalType::DOUBLE);
 	}
 	return Value::CreateValue<double>(val);
+}
+
+static Value TransformStatisticsDate(const_data_ptr_t input) {
+	return Value::DATE(ParquetIntToDate(Load<int32_t>(input)));
 }
 
 static Value TransformStatisticsTimestampMs(const_data_ptr_t input) {
@@ -113,6 +117,10 @@ unique_ptr<BaseStatistics> ParquetTransformColumnStatistics(const SchemaElement 
 		row_group_stats = TemplatedGetNumericStats<TransformStatisticsDouble>(type, parquet_stats);
 		break;
 
+	case LogicalTypeId::DATE:
+		row_group_stats = TemplatedGetNumericStats<TransformStatisticsDate>(type, parquet_stats);
+		break;
+
 		// here we go, our favorite type
 	case LogicalTypeId::TIMESTAMP: {
 		switch (s_ele.type) {
@@ -166,7 +174,11 @@ unique_ptr<BaseStatistics> ParquetTransformColumnStatistics(const SchemaElement 
 
 	// null count is generic
 	if (row_group_stats) {
-		if (parquet_stats.__isset.null_count) {
+		if (column_chunk.meta_data.type == duckdb_parquet::format::Type::FLOAT ||
+		    column_chunk.meta_data.type == duckdb_parquet::format::Type::DOUBLE) {
+			// floats/doubles can have infinity, which becomes NULL
+			row_group_stats->validity_stats = make_unique<ValidityStatistics>(true);
+		} else if (parquet_stats.__isset.null_count) {
 			row_group_stats->validity_stats = make_unique<ValidityStatistics>(parquet_stats.null_count != 0);
 		} else {
 			row_group_stats->validity_stats = make_unique<ValidityStatistics>(true);

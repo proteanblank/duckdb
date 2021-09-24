@@ -11,13 +11,21 @@
 
 namespace duckdb {
 
-static void CreateColumnMap(BoundCreateTableInfo &info) {
+static void CreateColumnMap(BoundCreateTableInfo &info, bool allow_duplicate_names) {
 	auto &base = (CreateTableInfo &)*info.base;
 
 	for (uint64_t oid = 0; oid < base.columns.size(); oid++) {
 		auto &col = base.columns[oid];
-		if (info.name_map.find(col.name) != info.name_map.end()) {
-			throw CatalogException("Column with name %s already exists!", col.name);
+		if (allow_duplicate_names) {
+			idx_t index = 1;
+			string base_name = col.name;
+			while (info.name_map.find(col.name) != info.name_map.end()) {
+				col.name = base_name + ":" + to_string(index++);
+			}
+		} else {
+			if (info.name_map.find(col.name) != info.name_map.end()) {
+				throw CatalogException("Column with name %s already exists!", col.name);
+			}
 		}
 
 		info.name_map[col.name] = oid;
@@ -29,7 +37,7 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 	auto &base = (CreateTableInfo &)*info.base;
 
 	bool has_primary_key = false;
-	unordered_set<idx_t> primary_keys;
+	vector<idx_t> primary_keys;
 	for (idx_t i = 0; i < base.constraints.size(); i++) {
 		auto &cond = base.constraints[i];
 		switch (cond->type) {
@@ -55,11 +63,14 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 		case ConstraintType::UNIQUE: {
 			auto &unique = (UniqueConstraint &)*cond;
 			// have to resolve columns of the unique constraint
-			unordered_set<idx_t> keys;
+			vector<idx_t> keys;
+			unordered_set<idx_t> key_set;
 			if (unique.index != INVALID_INDEX) {
 				D_ASSERT(unique.index < base.columns.size());
 				// unique constraint is given by single index
-				keys.insert(unique.index);
+				unique.columns.push_back(base.columns[unique.index].name);
+				keys.push_back(unique.index);
+				key_set.insert(unique.index);
 			} else {
 				// unique constraint is given by list of names
 				// have to resolve names
@@ -69,12 +80,13 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 					if (entry == info.name_map.end()) {
 						throw ParserException("column \"%s\" named in key does not exist", keyname);
 					}
-					if (keys.find(entry->second) != keys.end()) {
+					if (key_set.find(entry->second) != key_set.end()) {
 						throw ParserException("column \"%s\" appears twice in "
 						                      "primary key constraint",
 						                      keyname);
 					}
-					keys.insert(entry->second);
+					keys.push_back(entry->second);
+					key_set.insert(entry->second);
 				}
 			}
 
@@ -86,7 +98,8 @@ static void BindConstraints(Binder &binder, BoundCreateTableInfo &info) {
 				has_primary_key = true;
 				primary_keys = keys;
 			}
-			info.bound_constraints.push_back(make_unique<BoundUniqueConstraint>(keys, unique.is_primary_key));
+			info.bound_constraints.push_back(
+			    make_unique<BoundUniqueConstraint>(move(keys), move(key_set), unique.is_primary_key));
 			break;
 		}
 		default:
@@ -138,10 +151,10 @@ unique_ptr<BoundCreateTableInfo> Binder::BindCreateTableInfo(unique_ptr<CreateIn
 			base.columns.emplace_back(names[i], sql_types[i]);
 		}
 		// create the name map for the statement
-		CreateColumnMap(*result);
+		CreateColumnMap(*result, true);
 	} else {
 		// create the name map for the statement
-		CreateColumnMap(*result);
+		CreateColumnMap(*result, false);
 		// bind any constraints
 		BindConstraints(*this, *result);
 		// bind the default values
@@ -149,8 +162,9 @@ unique_ptr<BoundCreateTableInfo> Binder::BindCreateTableInfo(unique_ptr<CreateIn
 	}
 	// bind collations to detect any unsupported collation errors
 	for (auto &column : base.columns) {
-		ExpressionBinder::TestCollation(context, column.type.collation());
+		ExpressionBinder::TestCollation(context, StringType::GetCollation(column.type));
 	}
+	this->allow_stream_result = false;
 	return result;
 }
 

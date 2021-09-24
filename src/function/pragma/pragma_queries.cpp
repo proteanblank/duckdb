@@ -9,7 +9,7 @@ string PragmaTableInfo(ClientContext &context, const FunctionParameters &paramet
 }
 
 string PragmaShowTables(ClientContext &context, const FunctionParameters &parameters) {
-	return "SELECT name FROM sqlite_master() ORDER BY name";
+	return "SELECT name FROM sqlite_master ORDER BY name";
 }
 
 string PragmaAllProfiling(ClientContext &context, const FunctionParameters &parameters) {
@@ -43,12 +43,15 @@ string PragmaVersion(ClientContext &context, const FunctionParameters &parameter
 
 string PragmaImportDatabase(ClientContext &context, const FunctionParameters &parameters) {
 	auto &fs = FileSystem::GetFileSystem(context);
+	auto *opener = FileSystem::GetFileOpener(context);
+
 	string query;
 	// read the "shema.sql" and "load.sql" files
 	vector<string> files = {"schema.sql", "load.sql"};
 	for (auto &file : files) {
 		auto file_path = fs.JoinPath(parameters.values[0].ToString(), file);
-		auto handle = fs.OpenFile(file_path, FileFlags::FILE_FLAGS_READ);
+		auto handle = fs.OpenFile(file_path, FileFlags::FILE_FLAGS_READ, FileSystem::DEFAULT_LOCK,
+		                          FileSystem::DEFAULT_COMPRESSION, opener);
 		auto fsize = fs.GetFileSize(*handle);
 		auto buffer = unique_ptr<char[]>(new char[fsize]);
 		fs.Read(*handle, buffer.get(), fsize);
@@ -62,8 +65,13 @@ string PragmaDatabaseSize(ClientContext &context, const FunctionParameters &para
 	return "SELECT * FROM pragma_database_size()";
 }
 
+string PragmaStorageInfo(ClientContext &context, const FunctionParameters &parameters) {
+	return StringUtil::Format("SELECT * FROM pragma_storage_info('%s')", parameters.values[0].ToString());
+}
+
 void PragmaQueries::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaCall("table_info", PragmaTableInfo, {LogicalType::VARCHAR}));
+	set.AddFunction(PragmaFunction::PragmaCall("storage_info", PragmaStorageInfo, {LogicalType::VARCHAR}));
 	set.AddFunction(PragmaFunction::PragmaStatement("show_tables", PragmaShowTables));
 	set.AddFunction(PragmaFunction::PragmaStatement("database_list", PragmaDatabaseList));
 	set.AddFunction(PragmaFunction::PragmaStatement("collations", PragmaCollations));

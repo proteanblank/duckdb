@@ -33,15 +33,11 @@ public:
 		if (IsInlined()) {
 			// zero initialize the prefix first
 			// this makes sure that strings with length smaller than 4 still have an equal prefix
-			memset(value.inlined.inlined, 0, PREFIX_LENGTH);
+			memset(value.inlined.inlined, 0, INLINE_LENGTH);
 			if (GetSize() == 0) {
 				return;
 			}
 			// small string: inlined
-			/* Note: this appears to write out-of bounds on `prefix` if `length` > `PREFIX_LENGTH`
-			 but this is not the case because the `value_` union `inlined` char array directly
-			 follows it with 8 more chars to use for the string value.
-			 */
 			memcpy(value.inlined.inlined, data, GetSize());
 		} else {
 			// large string: store pointer
@@ -80,12 +76,16 @@ public:
 		return string(GetDataUnsafe(), GetSize());
 	}
 
+	explicit operator string() const {
+		return GetString();
+	}
+
 	void Finalize() {
 		// set trailing NULL byte
 		auto dataptr = (char *)GetDataUnsafe();
 		if (GetSize() <= INLINE_LENGTH) {
 			// fill prefix with zeros if the length is smaller than the prefix length
-			for (idx_t i = GetSize(); i < PREFIX_LENGTH; i++) {
+			for (idx_t i = GetSize(); i < INLINE_LENGTH; i++) {
 				value.inlined.inlined[i] = '\0';
 			}
 		} else {

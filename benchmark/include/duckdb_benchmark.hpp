@@ -14,6 +14,7 @@
 #include "duckdb.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "test_helpers.hpp"
+#include "duckdb/main/query_profiler.hpp"
 
 namespace duckdb {
 
@@ -25,6 +26,9 @@ struct DuckDBBenchmarkState : public BenchmarkState {
 
 	DuckDBBenchmarkState(string path) : db(path.empty() ? nullptr : path.c_str()), conn(db) {
 		conn.EnableProfiling();
+		auto &instance = BenchmarkRunner::GetInstance();
+		auto res = conn.Query("PRAGMA threads=" + to_string(instance.threads));
+		D_ASSERT(res->success);
 	}
 	virtual ~DuckDBBenchmarkState() {
 	}
@@ -95,7 +99,7 @@ public:
 
 	string GetLogOutput(BenchmarkState *state_p) override {
 		auto state = (DuckDBBenchmarkState *)state_p;
-		return state->conn.context->profiler.ToJSON();
+		return state->conn.context->profiler->ToJSON();
 	}
 
 	//! Interrupt the benchmark because of a timeout

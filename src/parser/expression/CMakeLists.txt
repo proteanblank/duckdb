@@ -1,6 +1,7 @@
 add_library_unity(
   duckdb_expression
   OBJECT
+  between_expression.cpp
   case_expression.cpp
   cast_expression.cpp
   collate_expression.cpp
@@ -16,7 +17,6 @@ add_library_unity(
   positional_reference_expression.cpp
   star_expression.cpp
   subquery_expression.cpp
-  table_star_expression.cpp
   window_expression.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_expression>

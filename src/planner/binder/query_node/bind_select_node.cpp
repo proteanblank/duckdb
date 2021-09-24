@@ -6,7 +6,6 @@
 #include "duckdb/parser/expression/comparison_expression.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/expression/subquery_expression.hpp"
-#include "duckdb/parser/expression/table_star_expression.hpp"
 #include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/parser/tableref/joinref.hpp"
 #include "duckdb/planner/binder.hpp"
@@ -37,10 +36,9 @@ unique_ptr<Expression> Binder::BindOrderExpression(OrderBinder &order_binder, un
 	return bound_expr;
 }
 
-unique_ptr<Expression> BindDelimiter(ClientContext &context, unique_ptr<ParsedExpression> delimiter,
-                                     int64_t &delimiter_value) {
-
-	auto new_binder = Binder::CreateBinder(context);
+unique_ptr<Expression> Binder::BindDelimiter(ClientContext &context, unique_ptr<ParsedExpression> delimiter,
+                                             int64_t &delimiter_value) {
+	auto new_binder = Binder::CreateBinder(context, this, true);
 	ExpressionBinder expr_binder(*new_binder, context);
 	expr_binder.target_type = LogicalType::UBIGINT;
 	auto expr = expr_binder.Bind(delimiter);
@@ -139,8 +137,8 @@ void Binder::BindModifierTypes(BoundQueryNode &result, const vector<LogicalType>
 				auto &bound_colref = (BoundColumnRefExpression &)*target_distinct;
 				auto sql_type = sql_types[bound_colref.binding.column_index];
 				if (sql_type.id() == LogicalTypeId::VARCHAR) {
-					target_distinct =
-					    ExpressionBinder::PushCollation(context, move(target_distinct), sql_type.collation(), true);
+					target_distinct = ExpressionBinder::PushCollation(context, move(target_distinct),
+					                                                  StringType::GetCollation(sql_type), true);
 				}
 			}
 			break;
@@ -158,8 +156,8 @@ void Binder::BindModifierTypes(BoundQueryNode &result, const vector<LogicalType>
 				auto sql_type = sql_types[bound_colref.binding.column_index];
 				bound_colref.return_type = sql_types[bound_colref.binding.column_index];
 				if (sql_type.id() == LogicalTypeId::VARCHAR) {
-					order_node.expression =
-					    ExpressionBinder::PushCollation(context, move(order_node.expression), sql_type.collation());
+					order_node.expression = ExpressionBinder::PushCollation(context, move(order_node.expression),
+					                                                        StringType::GetCollation(sql_type));
 				}
 			}
 			break;
@@ -192,14 +190,14 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	for (auto &select_element : statement.select_list) {
 		if (select_element->GetExpressionType() == ExpressionType::STAR) {
 			// * statement, expand to all columns from the FROM clause
-			bind_context.GenerateAllColumnExpressions(new_select_list);
-		} else if (select_element->GetExpressionType() == ExpressionType::TABLE_STAR) {
-			auto table_star = (TableStarExpression *)select_element.get();
-			bind_context.GenerateAllColumnExpressions(new_select_list, table_star->relation_name);
+			bind_context.GenerateAllColumnExpressions((StarExpression &)*select_element, new_select_list);
 		} else {
 			// regular statement, add it to the list
 			new_select_list.push_back(move(select_element));
 		}
+	}
+	if (new_select_list.empty()) {
+		throw BinderException("SELECT list is empty after resolving * expressions!");
 	}
 	statement.select_list = move(new_select_list);
 
@@ -250,7 +248,8 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 			D_ASSERT(bound_expr->return_type.id() != LogicalTypeId::INVALID);
 
 			// push a potential collation, if necessary
-			bound_expr = ExpressionBinder::PushCollation(context, move(bound_expr), group_type.collation(), true);
+			bound_expr =
+			    ExpressionBinder::PushCollation(context, move(bound_expr), StringType::GetCollation(group_type), true);
 			result->groups.push_back(move(bound_expr));
 
 			// in the unbound expression we DO bind the table names of any ColumnRefs
@@ -276,7 +275,7 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	for (idx_t i = 0; i < statement.select_list.size(); i++) {
 		LogicalType result_type;
 		auto expr = select_binder.Bind(statement.select_list[i], &result_type);
-		if (statement.aggregate_handling == AggregateHandling::FORCE_AGGREGATES && select_binder.BoundColumns()) {
+		if (statement.aggregate_handling == AggregateHandling::FORCE_AGGREGATES && select_binder.HasBoundColumns()) {
 			if (select_binder.BoundAggregates()) {
 				throw BinderException("Cannot mix aggregates with non-aggregated columns!");
 			}
@@ -306,8 +305,12 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 		if (statement.aggregate_handling == AggregateHandling::NO_AGGREGATES_ALLOWED) {
 			throw BinderException("Aggregates cannot be present in a Project relation!");
 		} else if (statement.aggregate_handling == AggregateHandling::STANDARD_HANDLING) {
-			if (select_binder.BoundColumns()) {
-				throw BinderException("column must appear in the GROUP BY clause or be used in an aggregate function");
+			if (select_binder.HasBoundColumns()) {
+				auto &bound_columns = select_binder.GetBoundColumns();
+				throw BinderException(
+				    FormatError(bound_columns[0].query_location,
+				                "column \"%s\" must appear in the GROUP BY clause or be used in an aggregate function",
+				                bound_columns[0].name));
 			}
 		}
 	}

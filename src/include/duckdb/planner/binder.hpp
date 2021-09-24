@@ -16,6 +16,7 @@
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/bound_statement.hpp"
+#include "duckdb/common/case_insensitive_map.hpp"
 
 namespace duckdb {
 class BoundResultModifier;
@@ -54,6 +55,7 @@ struct CorrelatedColumnInfo {
 */
 class Binder : public std::enable_shared_from_this<Binder> {
 	friend class ExpressionBinder;
+	friend class SelectBinder;
 	friend class RecursiveSubqueryPlanner;
 
 public:
@@ -62,7 +64,7 @@ public:
 	//! The client context
 	ClientContext &context;
 	//! A mapping of names to common table expressions
-	unordered_map<string, CommonTableExpressionInfo *> CTE_bindings;
+	case_insensitive_map_t<CommonTableExpressionInfo *> CTE_bindings;
 	//! The CTEs that have already been bound
 	unordered_set<CommonTableExpressionInfo *> bound_ctes;
 	//! The bind context
@@ -123,7 +125,20 @@ public:
 
 	string FormatError(ParsedExpression &expr_context, const string &message);
 	string FormatError(TableRef &ref_context, const string &message);
-	string FormatError(idx_t query_location, const string &message);
+
+	string FormatErrorRecursive(idx_t query_location, const string &message, vector<ExceptionFormatValue> &values);
+	template <class T, typename... Args>
+	string FormatErrorRecursive(idx_t query_location, const string &msg, vector<ExceptionFormatValue> &values, T param,
+	                            Args... params) {
+		values.push_back(ExceptionFormatValue::CreateFormatValue<T>(param));
+		return FormatErrorRecursive(query_location, msg, values, params...);
+	}
+
+	template <typename... Args>
+	string FormatError(idx_t query_location, const string &msg, Args... params) {
+		vector<ExceptionFormatValue> values;
+		return FormatErrorRecursive(query_location, msg, values, params...);
+	}
 
 private:
 	//! The parent binder (if any)
@@ -138,12 +153,17 @@ private:
 	bool plan_subquery = true;
 	//! Whether CTEs should reference the parent binder (if it exists)
 	bool inherit_ctes = true;
+	//! Whether or not the binder can contain NULLs as the root of expressions
+	bool can_contain_nulls = false;
 	//! The root statement of the query that is currently being parsed
 	SQLStatement *root_statement = nullptr;
 
 private:
 	//! Bind the default values of the columns of a table
 	void BindDefaultValues(vector<ColumnDefinition> &columns, vector<unique_ptr<Expression>> &bound_defaults);
+	//! Bind a delimiter value (LIMIT or OFFSET)
+	unique_ptr<Expression> BindDelimiter(ClientContext &context, unique_ptr<ParsedExpression> delimiter,
+	                                     int64_t &delimiter_value);
 
 	//! Move correlated expressions from the child binder to this binder
 	void MoveCorrelatedExpressions(Binder &other);
@@ -209,6 +229,7 @@ private:
 	void BindModifiers(OrderBinder &order_binder, QueryNode &statement, BoundQueryNode &result);
 	void BindModifierTypes(BoundQueryNode &result, const vector<LogicalType> &sql_types, idx_t projection_index);
 
+	BoundStatement BindSummarize(ShowStatement &stmt);
 	unique_ptr<BoundResultModifier> BindLimit(LimitModifier &limit_mod);
 	unique_ptr<Expression> BindFilter(unique_ptr<ParsedExpression> condition);
 	unique_ptr<Expression> BindOrderExpression(OrderBinder &order_binder, unique_ptr<ParsedExpression> expr);
@@ -225,8 +246,13 @@ private:
 	string FindBinding(const string &using_column, const string &join_side);
 	bool TryFindBinding(const string &using_column, const string &join_side, string &result);
 
+	void AddUsingBindingSet(unique_ptr<UsingColumnSet> set);
+	string RetrieveUsingBinding(Binder &current_binder, UsingColumnSet *current_set, const string &column_name,
+	                            const string &join_side, UsingColumnSet *new_set);
+
 public:
 	// This should really be a private constructor, but make_shared does not allow it...
+	// If you are thinking about calling this, you should probably call Binder::CreateBinder
 	Binder(bool I_know_what_I_am_doing, ClientContext &context, shared_ptr<Binder> parent, bool inherit_ctes);
 };
 
