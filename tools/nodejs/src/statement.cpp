@@ -147,7 +147,7 @@ static Napi::Value convert_col_val(Napi::Env &env, duckdb::Value dval, duckdb::L
 		value = Napi::Number::New(env, duckdb::IntegerValue::Get(dval));
 	} break;
 	case duckdb::LogicalTypeId::BIGINT: {
-		value = Napi::Number::New(env, duckdb::BigIntValue::Get(dval));
+		value = Napi::BigInt::New(env, duckdb::BigIntValue::Get(dval));
 	} break;
 	case duckdb::LogicalTypeId::UTINYINT: {
 		value = Napi::Number::New(env, duckdb::UTinyIntValue::Get(dval));
@@ -159,7 +159,7 @@ static Napi::Value convert_col_val(Napi::Env &env, duckdb::Value dval, duckdb::L
 		value = Napi::Number::New(env, duckdb::UIntegerValue::Get(dval));
 	} break;
 	case duckdb::LogicalTypeId::UBIGINT: {
-		value = Napi::Number::New(env, duckdb::UBigIntValue::Get(dval));
+		value = Napi::BigInt::New(env, duckdb::UBigIntValue::Get(dval));
 	} break;
 	case duckdb::LogicalTypeId::FLOAT: {
 		value = Napi::Number::New(env, duckdb::FloatValue::Get(dval));
@@ -168,7 +168,14 @@ static Napi::Value convert_col_val(Napi::Env &env, duckdb::Value dval, duckdb::L
 		value = Napi::Number::New(env, duckdb::DoubleValue::Get(dval));
 	} break;
 	case duckdb::LogicalTypeId::HUGEINT: {
-		value = Napi::Number::New(env, dval.GetValue<double>());
+		auto val = duckdb::HugeIntValue::Get(dval);
+		auto negative = val.upper < 0;
+		if (negative) {
+			duckdb::Hugeint::NegateInPlace(val); // remove signing bit
+		}
+		D_ASSERT(val.upper >= 0);
+		const uint64_t words[] = {val.lower, static_cast<uint64_t>(val.upper)};
+		value = Napi::BigInt::New(env, negative, 2, words);
 	} break;
 	case duckdb::LogicalTypeId::DECIMAL: {
 		value = Napi::Number::New(env, dval.GetValue<double>());
@@ -541,7 +548,6 @@ static Napi::Value TypeToObject(Napi::Env &env, const duckdb::LogicalType &type)
 		obj.Set("value", TypeToObject(env, value_type));
 	} break;
 	case duckdb::LogicalTypeId::ENUM: {
-		auto name = duckdb::EnumType::GetTypeName(type);
 		auto &values_vec = duckdb::EnumType::GetValuesInsertOrder(type);
 		auto enum_size = duckdb::EnumType::GetSize(type);
 		auto arr = Napi::Array::New(env, enum_size);
@@ -549,7 +555,6 @@ static Napi::Value TypeToObject(Napi::Env &env, const duckdb::LogicalType &type)
 			auto child_name = values_vec.GetValue(i).GetValue<duckdb::string>();
 			arr.Set(i, child_name);
 		}
-		obj.Set("name", name);
 		obj.Set("values", arr);
 	} break;
 	case duckdb::LogicalTypeId::UNION: {
